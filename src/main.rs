@@ -45,7 +45,7 @@ fn parse_http_request(request_str: &str) -> Option<HttpRequest> {
     })
 }
 
-async fn handle_http(mut stream: TcpStream) {
+async fn handle_http(mut stream: TcpStream, addr: std::net::SocketAddr) {
     let mut buffer = [0; 1024];
 
     match stream.read(&mut buffer).await {
@@ -82,7 +82,11 @@ async fn handle_http(mut stream: TcpStream) {
                 body
             );
 
-            println!("Sending response: {}\n", status);
+            // ADD A DELAY to make sequential vs concurrent behavior visible!
+            println!("[{}] Sleeping for 3 seconds to simulate slow processing...", addr);
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+            println!("[{}] Sending response: {}\n", addr, status);
             stream.write_all(response.as_bytes()).await.unwrap();
             stream.flush().await.unwrap();
         }
@@ -101,7 +105,7 @@ async fn main() {
         match listener.accept().await {
             Ok((stream, addr)) => {
                 println!("New connection from: {}", addr);
-                handle_http(stream).await;
+                handle_http(stream, addr).await;
             }
             Err(e) => {
                 eprintln!("Connection failed: {}", e);
