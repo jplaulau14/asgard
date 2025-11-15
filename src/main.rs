@@ -82,10 +82,6 @@ async fn handle_http(mut stream: TcpStream, addr: std::net::SocketAddr) {
                 body
             );
 
-            // ADD A DELAY to make sequential vs concurrent behavior visible!
-            println!("[{}] Sleeping for 3 seconds to simulate slow processing...", addr);
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
             println!("[{}] Sending response: {}\n", addr, status);
             stream.write_all(response.as_bytes()).await.unwrap();
             stream.flush().await.unwrap();
