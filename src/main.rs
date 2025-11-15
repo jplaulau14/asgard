@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+use httparse::{Request, Status, EMPTY_HEADER};
+
 struct HttpRequest {
     method: String,
     path: String,
@@ -10,12 +12,12 @@ struct HttpRequest {
 }
 
 fn parse_http_request_httparse(buffer: &[u8]) -> Result<HttpRequest, String> {
-    let mut headers_buf = [httparse::EMPTY_HEADER; 64];
+    let mut headers_buf = [EMPTY_HEADER; 64];
 
-    let mut req = httparse::Request::new(&mut headers_buf);
+    let mut req = Request::new(&mut headers_buf);
 
     match req.parse(buffer) {
-        Ok(httparse::Status::Complete(_bytes_parsed)) => {
+        Ok(Status::Complete(_bytes_parsed)) => {
             let method = req.method
                 .ok_or("Missing method")?
                 .to_string();
@@ -41,7 +43,7 @@ fn parse_http_request_httparse(buffer: &[u8]) -> Result<HttpRequest, String> {
                 headers,
             })
         }
-        Ok(httparse::Status::Partial) => {
+        Ok(Status::Partial) => {
             Err("Incomplete request".to_string())
         }
         Err(e) => {
