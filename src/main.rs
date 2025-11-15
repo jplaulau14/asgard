@@ -9,14 +9,31 @@ fn handle_http(mut stream: TcpStream) {
             let request = String::from_utf8_lossy(&buffer[..bytes_read]);
             println!("Request:\n{}", request);
 
-            let body = "hello";
+            // Parse the request line (first line)
+            // Format: "GET /path HTTP/1.1"
+            let first_line = request.lines().next().unwrap_or("");
+            let parts: Vec<&str> = first_line.split_whitespace().collect();
+
+            // Extract the path (second element)
+            let path = if parts.len() >= 2 { parts[1] } else { "/" };
+            println!("Parsed path: {}", path);
+
+            // Route based on path
+            let (status, body) = match path {
+                "/" => ("200 OK", "hello world"),
+                "/health" => ("200 OK", "ok"),
+                _ => ("404 NOT FOUND", "404 - Not Found"),
+            };
+
+            // Build the response
             let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                "HTTP/1.1 {}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                status,
                 body.len(),
                 body
             );
 
-            println!("Sending response...");
+            println!("Sending response: {}", status);
             stream.write_all(response.as_bytes()).unwrap();
             stream.flush().unwrap();
         }
