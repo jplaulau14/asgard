@@ -3,6 +3,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use httparse::{Request, Status, EMPTY_HEADER};
+use serde::{Serialize};
 
 struct HttpRequest {
     method: String,
@@ -10,6 +11,19 @@ struct HttpRequest {
     version: u8,
     headers: HashMap<String, String>,
     body: Vec<u8>,
+}
+
+#[derive(Serialize)]
+struct StatusResponse {
+    status: String,
+    server: String,
+    version: String,
+}
+
+#[derive(Serialize)]
+struct EchoResponse {
+    received: String,
+    length: usize,
 }
 
 fn parse_http_request_httparse(buffer: &[u8]) -> Result<(HttpRequest, usize), String> {
@@ -98,6 +112,36 @@ async fn read_request_body(
     Ok(body)
 }
 
+fn json_response<T: Serialize>(status: &str, data: &T) -> String {
+    match serde_json::to_string(data) {
+        Ok(json_body) => {
+            format!(
+                "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                status,
+                json_body.len(),
+                json_body
+            )
+        }
+        Err(e) => {
+            let error_msg = format!("{{\"error\":\"Serialization failed: {}\"}}", e);
+            format!(
+                "HTTP/1.1 500 INTERNAL SERVER ERROR\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                error_msg.len(),
+                error_msg
+            )
+        }
+    }
+}
+
+fn text_response(status: &str, body: &str) -> String {
+    format!(
+        "HTTP/1.1 {}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+        status,
+        body.len(),
+        body
+    )
+}
+
 async fn handle_http(mut stream: TcpStream, addr: std::net::SocketAddr) {
     let mut buffer = [0; 1024];
 
@@ -135,27 +179,36 @@ async fn handle_http(mut stream: TcpStream, addr: std::net::SocketAddr) {
                 );
             }
 
-            let (status, response_body) = match request.path.as_str() {
-                "/" => ("200 OK", "hello world".to_string()),
-                "/health" => ("200 OK", "ok".to_string()),
+            let response = match request.path.as_str() {
+                "/" => text_response("200 OK", "hello world"),
+
+                "/health" => text_response("200 OK", "ok"),
+
+                "/api/status" => {
+                    let status_data = StatusResponse {
+                        status: "ok".to_string(),
+                        server: "Asgard".to_string(),
+                        version: "0.1.0".to_string(),
+                    };
+                    json_response("200 OK", &status_data)
+                }
+
                 "/echo" => {
                     if request.body.is_empty() {
-                        ("400 BAD REQUEST", "No body provided".to_string())
+                        text_response("400 BAD REQUEST", "No body provided")
                     } else {
-                        ("200 OK", String::from_utf8_lossy(&request.body).to_string())
+                        let echo_data = EchoResponse {
+                            received: String::from_utf8_lossy(&request.body).to_string(),
+                            length: request.body.len(),
+                        };
+                        json_response("200 OK", &echo_data)
                     }
                 }
-                _ => ("404 NOT FOUND", "404 - Not Found".to_string()),
+
+                _ => text_response("404 NOT FOUND", "404 - Not Found"),
             };
 
-            let response = format!(
-                "HTTP/1.1 {}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-                status,
-                response_body.len(),
-                response_body
-            );
-
-            println!("[{}] Sending response: {}\n", addr, status);
+            println!("[{}] Sending response\n", addr);
             stream.write_all(response.as_bytes()).await.unwrap();
             stream.flush().await.unwrap();
         }
@@ -173,7 +226,6 @@ async fn main() {
     loop {
         match listener.accept().await {
             Ok((stream, addr)) => {
-                println!("New connection from: {}", addr);
                 tokio::spawn(async move {
                     handle_http(stream, addr).await;
                 });
