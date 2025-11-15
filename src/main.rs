@@ -1,31 +1,80 @@
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+
+struct HttpRequest {
+    method: String,
+    path: String,
+    version: String,
+    headers: HashMap<String, String>,
+}
+
+fn parse_http_request(request_str: &str) -> Option<HttpRequest> {
+    let mut lines = request_str.lines();
+
+    let first_line = lines.next()?;
+    let parts: Vec<&str> = first_line.split_whitespace().collect();
+
+    if parts.len() != 3 {
+        return None;
+    }
+
+    let method = parts[0].to_string();
+    let path = parts[1].to_string();
+    let version = parts[2].to_string();
+
+    let mut headers = HashMap::new();
+
+    for line in lines {
+        if line.is_empty() {
+            break;
+        }
+
+        if let Some(colon_pos) = line.find(':') {
+            let key = line[..colon_pos].trim().to_string();
+            let value = line[colon_pos + 1..].trim().to_string();
+            headers.insert(key, value);
+        }
+    }
+
+    Some(HttpRequest {
+        method,
+        path,
+        version,
+        headers,
+    })
+}
 
 fn handle_http(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
 
     match stream.read(&mut buffer) {
         Ok(bytes_read) => {
-            let request = String::from_utf8_lossy(&buffer[..bytes_read]);
-            println!("Request:\n{}", request);
+            let request_str = String::from_utf8_lossy(&buffer[..bytes_read]);
+            println!("Raw request:\n{}", request_str);
 
-            // Parse the request line (first line)
-            // Format: "GET /path HTTP/1.1"
-            let first_line = request.lines().next().unwrap_or("");
-            let parts: Vec<&str> = first_line.split_whitespace().collect();
+            let request = match parse_http_request(&request_str) {
+                Some(req) => req,
+                None => {
+                    eprintln!("Failed to parse request");
+                    return;
+                }
+            };
 
-            // Extract the path (second element)
-            let path = if parts.len() >= 2 { parts[1] } else { "/" };
-            println!("Parsed path: {}", path);
+            println!("Method: {}", request.method);
+            println!("Path: {}", request.path);
+            println!("Version: {}", request.version);
+            println!("Headers:");
+            for (key, value) in &request.headers {
+                println!("  {}: {}", key, value);
+            }
 
-            // Route based on path
-            let (status, body) = match path {
+            let (status, body) = match request.path.as_str() {
                 "/" => ("200 OK", "hello world"),
                 "/health" => ("200 OK", "ok"),
                 _ => ("404 NOT FOUND", "404 - Not Found"),
             };
 
-            // Build the response
             let response = format!(
                 "HTTP/1.1 {}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
                 status,
@@ -33,7 +82,7 @@ fn handle_http(mut stream: TcpStream) {
                 body
             );
 
-            println!("Sending response: {}", status);
+            println!("Sending response: {}\n", status);
             stream.write_all(response.as_bytes()).unwrap();
             stream.flush().unwrap();
         }
