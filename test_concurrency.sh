@@ -1,10 +1,13 @@
 #!/bin/bash
 
+# Get number of requests from command line argument, default to 3
+NUM_REQUESTS=${1:-3}
+
 echo "========================================="
 echo "Testing SEQUENTIAL vs CONCURRENT Behavior"
 echo "========================================="
 echo ""
-echo "This script sends 3 requests in parallel."
+echo "This script sends $NUM_REQUESTS requests in parallel."
 echo "Watch the timestamps to see if they're processed:"
 echo "  - SEQUENTIALLY (one waits for another to finish)"
 echo "  - CONCURRENTLY (all processing at the same time)"
@@ -25,10 +28,10 @@ make_request() {
     echo "[Request $id] Finished at $(date +%H:%M:%S) (took ${duration}s) - Response: $response"
 }
 
-# Send 3 requests in parallel (background processes)
-make_request 1 &
-make_request 2 &
-make_request 3 &
+# Send N requests in parallel (background processes)
+for i in $(seq 1 $NUM_REQUESTS); do
+    make_request $i &
+done
 
 # Wait for all background processes to complete
 wait
@@ -39,9 +42,9 @@ echo ""
 echo "========================================="
 echo "EXPECTED BEHAVIOR:"
 echo "========================================="
-echo "SEQUENTIAL (current): All 3 requests take ~9 seconds total (3s + 3s + 3s)"
-echo "                      Each request waits for the previous to finish"
+echo "SEQUENTIAL: All $NUM_REQUESTS requests take ~$((NUM_REQUESTS * 3)) seconds total (3s × $NUM_REQUESTS)"
+echo "            Each request waits for the previous to finish"
 echo ""
-echo "CONCURRENT (after Task 5): All 3 requests take ~3 seconds total"
-echo "                           All process at the same time!"
+echo "CONCURRENT: All $NUM_REQUESTS requests take ~3 seconds total"
+echo "            All process at the same time!"
 echo "========================================="
