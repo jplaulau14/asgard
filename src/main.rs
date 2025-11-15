@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 struct HttpRequest {
     method: String,
@@ -45,10 +45,10 @@ fn parse_http_request(request_str: &str) -> Option<HttpRequest> {
     })
 }
 
-fn handle_http(mut stream: TcpStream) {
+async fn handle_http(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
 
-    match stream.read(&mut buffer) {
+    match stream.read(&mut buffer).await {
         Ok(bytes_read) => {
             let request_str = String::from_utf8_lossy(&buffer[..bytes_read]);
             println!("Raw request:\n{}", request_str);
@@ -83,8 +83,8 @@ fn handle_http(mut stream: TcpStream) {
             );
 
             println!("Sending response: {}\n", status);
-            stream.write_all(response.as_bytes()).unwrap();
-            stream.flush().unwrap();
+            stream.write_all(response.as_bytes()).await.unwrap();
+            stream.flush().await.unwrap();
         }
         Err(e) => {
             eprintln!("Failed to read from connection: {}", e);
@@ -94,14 +94,14 @@ fn handle_http(mut stream: TcpStream) {
 
 #[tokio::main]
 async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:8000").await.unwrap();
     println!("HTTP server listening on http://127.0.0.1:8000");
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                println!("New connection from: {}", stream.peer_addr().unwrap());
-                handle_http(stream);
+    loop {
+        match listener.accept().await {
+            Ok((stream, addr)) => {
+                println!("New connection from: {}", addr);
+                handle_http(stream).await;
             }
             Err(e) => {
                 eprintln!("Connection failed: {}", e);
