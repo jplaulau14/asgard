@@ -92,7 +92,8 @@ fn handle_http(mut stream: TcpStream) {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
     println!("HTTP server listening on http://127.0.0.1:8000");
 
