@@ -5,44 +5,49 @@ use tokio::net::{TcpListener, TcpStream};
 struct HttpRequest {
     method: String,
     path: String,
-    version: String,
+    version: u8,
     headers: HashMap<String, String>,
 }
 
-fn parse_http_request(request_str: &str) -> Option<HttpRequest> {
-    let mut lines = request_str.lines();
+fn parse_http_request_httparse(buffer: &[u8]) -> Result<HttpRequest, String> {
+    let mut headers_buf = [httparse::EMPTY_HEADER; 64];
 
-    let first_line = lines.next()?;
-    let parts: Vec<&str> = first_line.split_whitespace().collect();
+    let mut req = httparse::Request::new(&mut headers_buf);
 
-    if parts.len() != 3 {
-        return None;
-    }
+    match req.parse(buffer) {
+        Ok(httparse::Status::Complete(_bytes_parsed)) => {
+            let method = req.method
+                .ok_or("Missing method")?
+                .to_string();
 
-    let method = parts[0].to_string();
-    let path = parts[1].to_string();
-    let version = parts[2].to_string();
+            let path = req.path
+                .ok_or("Missing path")?
+                .to_string();
 
-    let mut headers = HashMap::new();
+            let version = req.version
+                .ok_or("Missing version")?;
 
-    for line in lines {
-        if line.is_empty() {
-            break;
+            let mut headers = HashMap::new();
+            for header in req.headers {
+                let name = header.name.to_string();
+                let value = String::from_utf8_lossy(header.value).to_string();
+                headers.insert(name, value);
+            }
+
+            Ok(HttpRequest {
+                method,
+                path,
+                version,
+                headers,
+            })
         }
-
-        if let Some(colon_pos) = line.find(':') {
-            let key = line[..colon_pos].trim().to_string();
-            let value = line[colon_pos + 1..].trim().to_string();
-            headers.insert(key, value);
+        Ok(httparse::Status::Partial) => {
+            Err("Incomplete request".to_string())
+        }
+        Err(e) => {
+            Err(format!("Parse error: {}", e))
         }
     }
-
-    Some(HttpRequest {
-        method,
-        path,
-        version,
-        headers,
-    })
 }
 
 async fn handle_http(mut stream: TcpStream, addr: std::net::SocketAddr) {
@@ -50,21 +55,18 @@ async fn handle_http(mut stream: TcpStream, addr: std::net::SocketAddr) {
 
     match stream.read(&mut buffer).await {
         Ok(bytes_read) => {
-            let request_str = String::from_utf8_lossy(&buffer[..bytes_read]);
-            println!("Raw request:\n{}", request_str);
-
-            let request = match parse_http_request(&request_str) {
-                Some(req) => req,
-                None => {
-                    eprintln!("Failed to parse request");
+            let request = match parse_http_request_httparse(&buffer[..bytes_read]) {
+                Ok(req) => req,
+                Err(e) => {
+                    eprintln!("[{}] Failed to parse request: {}", addr, e);
                     return;
                 }
             };
 
-            println!("Method: {}", request.method);
-            println!("Path: {}", request.path);
-            println!("Version: {}", request.version);
-            println!("Headers:");
+            println!("[{}] Method: {}", addr, request.method);
+            println!("[{}] Path: {}", addr, request.path);
+            println!("[{}] Version: HTTP/1.{}", addr, request.version);
+            println!("[{}] Headers:", addr);
             for (key, value) in &request.headers {
                 println!("  {}: {}", key, value);
             }
@@ -101,7 +103,6 @@ async fn main() {
         match listener.accept().await {
             Ok((stream, addr)) => {
                 println!("New connection from: {}", addr);
-                // Spawn a new task to handle this connection concurrently
                 tokio::spawn(async move {
                     handle_http(stream, addr).await;
                 });
