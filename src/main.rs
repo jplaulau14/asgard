@@ -105,7 +105,10 @@ async fn main() {
         match listener.accept().await {
             Ok((stream, addr)) => {
                 println!("New connection from: {}", addr);
-                handle_http(stream, addr).await;
+                // Spawn a new task to handle this connection concurrently
+                tokio::spawn(async move {
+                    handle_http(stream, addr).await;
+                });
             }
             Err(e) => {
                 eprintln!("Connection failed: {}", e);
